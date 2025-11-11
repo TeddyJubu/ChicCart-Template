@@ -247,19 +247,21 @@ export class DatabaseStorage implements IStorage {
 
   // Admin operations
   async getAdminMetrics() {
-    const [result] = await db.execute`
-      SELECT 
+    const result = await db.execute(
+      `SELECT 
         (SELECT COUNT(*)::int FROM products) as "totalProducts",
         (SELECT COUNT(*)::int FROM orders) as "totalOrders",
         (SELECT COALESCE(SUM(total), 0)::text FROM orders) as "totalRevenue",
-        (SELECT COUNT(*)::int FROM orders WHERE status = 'pending') as "pendingOrders"
-    `;
+        (SELECT COUNT(*)::int FROM orders WHERE status = 'pending') as "pendingOrders"`
+    );
+    
+    const row = result.rows[0] as any;
     
     return {
-      totalProducts: result.totalProducts as number,
-      totalOrders: result.totalOrders as number,
-      totalRevenue: result.totalRevenue as string,
-      pendingOrders: result.pendingOrders as number,
+      totalProducts: row.totalProducts as number,
+      totalOrders: row.totalOrders as number,
+      totalRevenue: row.totalRevenue as string,
+      pendingOrders: row.pendingOrders as number,
     };
   }
 
@@ -273,21 +275,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDatabaseStats() {
-    const [result] = await db.execute`
-      SELECT 
+    const result = await db.execute(
+      `SELECT 
         (SELECT COUNT(*)::int FROM users) as "totalUsers",
         (SELECT COUNT(*)::int FROM products) as "totalProducts",
         (SELECT COUNT(*)::int FROM product_variants) as "totalVariants",
         (SELECT COUNT(*)::int FROM orders) as "totalOrders",
-        (SELECT COUNT(*)::int FROM cart_items) as "totalCartItems"
-    `;
+        (SELECT COUNT(*)::int FROM cart_items) as "totalCartItems"`
+    );
+    
+    const row = result.rows[0] as any;
     
     return {
-      totalUsers: result.totalUsers as number,
-      totalProducts: result.totalProducts as number,
-      totalVariants: result.totalVariants as number,
-      totalOrders: result.totalOrders as number,
-      totalCartItems: result.totalCartItems as number,
+      totalUsers: row.totalUsers as number,
+      totalProducts: row.totalProducts as number,
+      totalVariants: row.totalVariants as number,
+      totalOrders: row.totalOrders as number,
+      totalCartItems: row.totalCartItems as number,
     };
   }
 }

@@ -50,6 +50,10 @@ export default function AdminPanel() {
   const isOwner = location === "/admin" || location === "/admin/owner";
   const isDev = location === "/admin/developer";
 
+  // Default to owner dashboard if no specific view selected
+  const showOwnerDashboard = !isDev;
+  const showDeveloperDashboard = isDev;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
@@ -93,11 +97,8 @@ export default function AdminPanel() {
       </div>
 
       {/* Content */}
-      <Switch>
-        <Route path="/admin" component={OwnerDashboard} />
-        <Route path="/admin/owner" component={OwnerDashboard} />
-        <Route path="/admin/developer" component={DeveloperDashboard} />
-      </Switch>
+      {showOwnerDashboard && <OwnerDashboard />}
+      {showDeveloperDashboard && <DeveloperDashboard />}
     </div>
   );
 }

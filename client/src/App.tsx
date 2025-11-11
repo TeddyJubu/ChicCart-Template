@@ -25,6 +25,8 @@ function Router() {
       <Route path="/checkout" component={Checkout} />
       <Route path="/orders" component={Orders} />
       <Route path="/admin" component={AdminPanel} />
+      <Route path="/admin/owner" component={AdminPanel} />
+      <Route path="/admin/developer" component={AdminPanel} />
       <Route component={NotFound} />
     </Switch>
   );
