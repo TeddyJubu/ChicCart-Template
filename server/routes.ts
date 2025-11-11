@@ -11,7 +11,52 @@ import {
   insertOrderItemSchema 
 } from "@shared/schema";
 
+// In-memory API request log (ring buffer of last 100 requests)
+const apiLogs: Array<{
+  method: string;
+  path: string;
+  status: number;
+  duration: number;
+  timestamp: string;
+}> = [];
+
+const MAX_LOGS = 100;
+
+// System startup time for uptime calculation
+const startupTime = Date.now();
+
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Request logging middleware (for admin dashboard)
+  app.use((req, res, next) => {
+    const startTime = Date.now();
+    
+    // Capture response finish to log duration
+    const originalSend = res.send;
+    res.send = function (data) {
+      const duration = Date.now() - startTime;
+      
+      // Only log API requests
+      if (req.path.startsWith('/api')) {
+        apiLogs.push({
+          method: req.method,
+          path: req.path,
+          status: res.statusCode,
+          duration,
+          timestamp: new Date().toISOString(),
+        });
+        
+        // Keep only last MAX_LOGS entries
+        if (apiLogs.length > MAX_LOGS) {
+          apiLogs.shift();
+        }
+      }
+      
+      return originalSend.call(this, data);
+    };
+    
+    next();
+  });
+
   // Auth middleware
   await setupAuth(app);
 
@@ -313,6 +358,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error updating order status:", error);
       res.status(400).json({ message: error.message || "Failed to update order status" });
+    }
+  });
+
+  // Admin API endpoints
+  app.get('/api/admin/metrics', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const metrics = await storage.getAdminMetrics();
+      res.json(metrics);
+    } catch (error) {
+      console.error("Error fetching admin metrics:", error);
+      res.status(500).json({ message: "Failed to fetch metrics" });
+    }
+  });
+
+  app.get('/api/admin/products', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const products = await storage.getProductsWithVariants();
+      res.json(products);
+    } catch (error) {
+      console.error("Error fetching products with variants:", error);
+      res.status(500).json({ message: "Failed to fetch products" });
+    }
+  });
+
+  app.get('/api/admin/health', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const uptime = Math.floor((Date.now() - startupTime) / 1000);
+      res.json({
+        status: "healthy",
+        uptime,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error fetching health:", error);
+      res.status(500).json({ message: "Failed to fetch health" });
+    }
+  });
+
+  app.get('/api/admin/db-stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const stats = await storage.getDatabaseStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching database stats:", error);
+      res.status(500).json({ message: "Failed to fetch stats" });
+    }
+  });
+
+  app.get('/api/admin/logs', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      // Return logs in reverse chronological order
+      res.json([...apiLogs].reverse());
+    } catch (error) {
+      console.error("Error fetching logs:", error);
+      res.status(500).json({ message: "Failed to fetch logs" });
     }
   });
 
