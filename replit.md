@@ -34,7 +34,9 @@ Preferred communication style: Simple, everyday language.
 - ProductPage: Detailed product view with variant selection
 - Checkout: Order creation with address collection
 - Orders: Order history view
-- Admin: Product and inventory management (admin-only)
+- Admin: Dual-dashboard admin panel (admin-only)
+  - Owner Dashboard: Mobile-first product/order management with KPIs, CRUD operations, and variant stock control
+  - Developer Dashboard: System monitoring with health checks, database statistics, and API request logs
 
 **Component Architecture**:
 - Reusable components: Header, Footer, Cart (slide-in panel), ProductCard, ProductGrid, ProductDetail, Hero
@@ -49,6 +51,9 @@ Preferred communication style: Simple, everyday language.
 - Cart endpoints: Session-based cart management
 - Order endpoints: Order creation and retrieval
 - Auth endpoints: User session management
+- Admin endpoints: GET /api/admin/metrics, /api/admin/health, /api/admin/db-stats, /api/admin/logs, /api/admin/products
+
+**Request Logging**: In-memory ring buffer (100 entries) capturing method, path, status, duration, and timestamp for all API requests, accessible via the Developer dashboard.
 
 **Development Workflow**: 
 - Vite middleware integration for HMR during development
