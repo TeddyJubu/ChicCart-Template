@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { ShoppingCart, User, Menu, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { LoginDialog } from "@/components/LoginDialog";
 
 interface HeaderProps {
   onCartClick?: () => void;
@@ -10,6 +12,7 @@ interface HeaderProps {
 }
 
 export default function Header({ onCartClick, onMenuClick, cartItemCount = 0 }: HeaderProps) {
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto max-w-7xl px-6 lg:px-12">
@@ -70,6 +73,7 @@ export default function Header({ onCartClick, onMenuClick, cartItemCount = 0 }: 
             <Button
               size="icon"
               variant="ghost"
+              onClick={() => setLoginDialogOpen(true)}
               data-testid="button-account"
             >
               <User className="h-5 w-5" />
@@ -94,6 +98,7 @@ export default function Header({ onCartClick, onMenuClick, cartItemCount = 0 }: 
           </div>
         </div>
       </div>
+      <LoginDialog open={loginDialogOpen} onOpenChange={setLoginDialogOpen} />
     </header>
   );
 }
