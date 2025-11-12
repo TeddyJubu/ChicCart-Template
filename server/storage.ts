@@ -60,6 +60,7 @@ export interface IStorage {
     totalOrders: number;
     totalRevenue: string;
     pendingOrders: number;
+    lowStockVariants: number;
   }>;
   getProductsWithVariants(): Promise<Array<Product & { variants: ProductVariant[] }>>;
   getDatabaseStats(): Promise<{
@@ -258,7 +259,10 @@ export class DatabaseStorage implements IStorage {
         (SELECT COUNT(*)::int FROM products) as "totalProducts",
         (SELECT COUNT(*)::int FROM orders) as "totalOrders",
         (SELECT COALESCE(SUM(total), 0)::text FROM orders) as "totalRevenue",
-        (SELECT COUNT(*)::int FROM orders WHERE status = 'pending') as "pendingOrders"`
+        (SELECT COUNT(*)::int FROM orders WHERE status = 'pending') as "pendingOrders",
+        (SELECT COUNT(*)::int FROM product_variants pv 
+         INNER JOIN products p ON pv.product_id = p.id 
+         WHERE pv.stock <= COALESCE(p.low_stock_threshold, 10)) as "lowStockVariants"`
     );
     
     const row = result.rows[0] as any;
@@ -268,6 +272,7 @@ export class DatabaseStorage implements IStorage {
       totalOrders: row.totalOrders as number,
       totalRevenue: row.totalRevenue as string,
       pendingOrders: row.pendingOrders as number,
+      lowStockVariants: row.lowStockVariants as number,
     };
   }
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Product, ProductVariant, Order, OrderItem } from "@shared/schema";
@@ -25,9 +26,9 @@ import {
   DollarSign, 
   Edit, 
   Trash2,
-  Save,
-  X
+  AlertTriangle
 } from "lucide-react";
+import { VariantEditor } from "@/components/VariantEditor";
 
 type ProductFormData = z.infer<typeof insertProductSchema>;
 
@@ -36,13 +37,14 @@ interface AdminMetrics {
   totalOrders: number;
   totalRevenue: string;
   pendingOrders: number;
+  lowStockVariants: number;
 }
 
 export default function OwnerDashboard() {
   const { toast } = useToast();
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
-  const [editingVariant, setEditingVariant] = useState<string | null>(null);
-  const [variantStock, setVariantStock] = useState<Record<string, number>>({});
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [isVariantEditorOpen, setIsVariantEditorOpen] = useState(false);
 
   // Fetch metrics
   const { data: metrics } = useQuery<AdminMetrics>({
@@ -107,16 +109,18 @@ export default function OwnerDashboard() {
     },
   });
 
-  const updateVariantStockMutation = useMutation({
-    mutationFn: async ({ id, stock }: { id: string; stock: number }) => {
-      await apiRequest(`/api/variants/${id}`, 'PATCH', { stock });
+  const updateVariantMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { sku?: string; price?: string; costPrice?: string; stock?: number } }) => {
+      await apiRequest(`/api/variants/${id}`, 'PATCH', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/products'] });
-      setEditingVariant(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/metrics'] });
+      setIsVariantEditorOpen(false);
+      setSelectedVariant(null);
       toast({
         title: "Success",
-        description: "Stock updated successfully",
+        description: "Variant updated successfully",
       });
     },
   });
@@ -138,7 +142,7 @@ export default function OwnerDashboard() {
     <div className="min-h-screen bg-muted/30">
       <div className="container max-w-7xl py-6 space-y-6">
         {/* KPI Cards - Mobile First */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
           <Card className="p-4">
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2 text-muted-foreground">
@@ -183,6 +187,18 @@ export default function OwnerDashboard() {
               </div>
               <p className="text-2xl md:text-3xl font-bold" data-testid="metric-pending">
                 {metrics?.pendingOrders || 0}
+              </p>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-amber-500">
+                <AlertTriangle className="h-4 w-4" />
+                <span className="text-xs md:text-sm">Low Stock</span>
+              </div>
+              <p className="text-2xl md:text-3xl font-bold" data-testid="metric-low-stock">
+                {metrics?.lowStockVariants ?? 0}
               </p>
             </div>
           </Card>
@@ -327,72 +343,55 @@ export default function OwnerDashboard() {
                           <div>
                             <h4 className="text-sm font-medium mb-3">Variants & Stock</h4>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {product.variants?.map((variant) => (
-                                <div 
-                                  key={variant.id} 
-                                  className="flex items-center justify-between p-2 rounded border"
-                                  data-testid={`variant-${variant.id}`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <div 
-                                      className="w-4 h-4 rounded-full border" 
-                                      style={{ backgroundColor: variant.colorHex }}
-                                    />
-                                    <span className="text-sm">{variant.size}, {variant.color}</span>
-                                  </div>
-                                  
-                                  {editingVariant === variant.id ? (
-                                    <div className="flex items-center gap-1">
-                                      <Input
-                                        type="number"
-                                        className="w-16 h-7 text-xs"
-                                        value={variantStock[variant.id] ?? variant.stock}
-                                        onChange={(e) => setVariantStock({
-                                          ...variantStock,
-                                          [variant.id]: parseInt(e.target.value) || 0
-                                        })}
-                                        data-testid={`input-stock-${variant.id}`}
+                              {product.variants?.map((variant) => {
+                                const isLowStock = variant.stock <= (product.lowStockThreshold ?? 5);
+                                return (
+                                  <div 
+                                    key={variant.id} 
+                                    className="flex items-center justify-between p-2 rounded border"
+                                    data-testid={`variant-${variant.id}`}
+                                  >
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <div 
+                                        className="w-4 h-4 rounded-full border flex-shrink-0" 
+                                        style={{ backgroundColor: variant.colorHex }}
                                       />
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-7 w-7"
-                                        onClick={() => {
-                                          updateVariantStockMutation.mutate({
-                                            id: variant.id,
-                                            stock: variantStock[variant.id] ?? variant.stock
-                                          });
-                                        }}
-                                        data-testid={`button-save-stock-${variant.id}`}
-                                      >
-                                        <Save className="h-3 w-3" />
-                                      </Button>
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-7 w-7"
-                                        onClick={() => setEditingVariant(null)}
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </Button>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-sm truncate">{variant.size}, {variant.color}</p>
+                                          {isLowStock && (
+                                            <Badge 
+                                              variant="destructive" 
+                                              className="text-xs px-1 py-0 h-4"
+                                              data-testid={`badge-low-stock-${variant.id}`}
+                                            >
+                                              Low Stock
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                          Stock: {variant.stock}
+                                          {variant.price && ` • $${parseFloat(variant.price).toFixed(2)}`}
+                                        </p>
+                                      </div>
                                     </div>
-                                  ) : (
+                                    
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      className="h-7 px-2 text-xs"
+                                      className="h-7 px-2 text-xs gap-1 flex-shrink-0"
                                       onClick={() => {
-                                        setEditingVariant(variant.id);
-                                        setVariantStock({ ...variantStock, [variant.id]: variant.stock });
+                                        setSelectedVariant(variant);
+                                        setIsVariantEditorOpen(true);
                                       }}
-                                      data-testid={`button-edit-stock-${variant.id}`}
+                                      data-testid={`button-edit-variant-${variant.id}`}
                                     >
-                                      Stock: {variant.stock}
-                                      <Edit className="h-3 w-3 ml-1" />
+                                      <Edit className="h-3 w-3" />
+                                      Edit
                                     </Button>
-                                  )}
-                                </div>
-                              ))}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
 
@@ -400,6 +399,17 @@ export default function OwnerDashboard() {
 
                           {/* Actions */}
                           <div className="flex gap-2">
+                            <Link href={`/admin/products/${product.id}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                                data-testid={`button-edit-${product.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                                Edit Product
+                              </Button>
+                            </Link>
                             <Button
                               variant="destructive"
                               size="sm"
@@ -499,6 +509,25 @@ export default function OwnerDashboard() {
           )}
         </Card>
       </div>
+
+      {/* Variant Editor Modal */}
+      <VariantEditor
+        variant={selectedVariant}
+        open={isVariantEditorOpen}
+        onClose={() => {
+          setIsVariantEditorOpen(false);
+          setSelectedVariant(null);
+        }}
+        onSave={(data) => {
+          if (selectedVariant) {
+            updateVariantMutation.mutate({
+              id: selectedVariant.id,
+              data,
+            });
+          }
+        }}
+        isSaving={updateVariantMutation.isPending}
+      />
     </div>
   );
 }
