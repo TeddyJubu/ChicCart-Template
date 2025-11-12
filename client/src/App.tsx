@@ -9,6 +9,7 @@ import ProductPage from "@/pages/ProductPage";
 import Checkout from "@/pages/Checkout";
 import Orders from "@/pages/Orders";
 import AdminPanel from "@/pages/Admin";
+import ProductEditor from "@/pages/ProductEditor";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/admin" component={AdminPanel} />
       <Route path="/admin/owner" component={AdminPanel} />
       <Route path="/admin/developer" component={AdminPanel} />
+      <Route path="/admin/products/:id" component={ProductEditor} />
       <Route component={NotFound} />
     </Switch>
   );
