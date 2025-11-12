@@ -134,6 +134,12 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  // Check for local login session first
+  if ((req as any).session?.userId) {
+    return next();
+  }
+
+  // Fall back to OIDC authentication
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user.expires_at) {
