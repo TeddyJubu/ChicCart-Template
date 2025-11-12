@@ -23,9 +23,12 @@ import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
-  // User operations - required for Replit Auth
+  // User operations - for local authentication
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: { email: string; password: string; firstName?: string; lastName?: string; username?: string }): Promise<User>;
+  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   
   // Product operations
@@ -73,7 +76,7 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  // User operations - required for Replit Auth
+  // User operations - for local authentication
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
@@ -81,6 +84,35 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createUser(userData: { email: string; password: string; firstName?: string; lastName?: string; username?: string }): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({
+        ...userData,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return user;
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id))
+      .returning();
     return user;
   }
 

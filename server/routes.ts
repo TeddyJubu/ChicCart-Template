@@ -1,8 +1,12 @@
-// From blueprint:javascript_log_in_with_replit
+// E-commerce platform routes
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, requireAuth, requireAdmin, getUserId } from "./auth";
+import { storageService, generateFileKey, validateImageFile } from "./storageService";
+import multer from "multer";
+import express from "express";
+import path from "path";
 import { 
   insertProductSchema, 
   insertProductVariantSchema, 
@@ -11,19 +15,6 @@ import {
   insertOrderItemSchema 
 } from "@shared/schema";
 import bcrypt from "bcrypt";
-
-// Helper function to get user ID from either local session or OIDC
-function getUserId(req: any): string | null {
-  // Check local session first
-  if (req.session?.userId) {
-    return req.session.userId;
-  }
-  // Fall back to OIDC
-  if (req.user?.claims?.sub) {
-    return req.user.claims.sub;
-  }
-  return null;
-}
 
 // Helper function to exclude password from user object
 function sanitizeUser(user: any) {
@@ -47,6 +38,30 @@ const MAX_LOGS = 100;
 const startupTime = Date.now();
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication routes
+  setupAuth(app);
+  
+  // Setup file upload middleware
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+    },
+    fileFilter: (req, file, cb) => {
+      const validation = validateImageFile(file);
+      if (validation.valid) {
+        cb(null, true);
+      } else {
+        cb(new Error(validation.error || "Invalid file"));
+      }
+    },
+  });
+
+  // Serve uploaded files for local storage
+  if (process.env.NODE_ENV !== 'production' && !process.env.AWS_S3_BUCKET) {
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
+    app.use('/uploads', express.static(path.resolve(uploadDir)));
+  }
   // Request logging middleware (for admin dashboard)
   app.use((req, res, next) => {
     const startTime = Date.now();
@@ -174,73 +189,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Object storage routes for product images
-  app.post('/api/objects/upload', isAuthenticated, async (req: any, res) => {
+  // File upload routes
+  app.post('/api/upload', requireAuth, upload.single('file'), async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      const user = await storage.getUser(userId);
-      if (!user?.isAdmin) {
-        return res.status(403).json({ message: "Admin access required" });
+        return res.status(401).json({ message: 'Authentication required' });
       }
 
-      const { ObjectStorageService } = await import('./objectStorage');
-      const objectStorageService = new ObjectStorageService();
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-      res.json({ uploadURL });
-    } catch (error) {
-      console.error("Error getting upload URL:", error);
-      res.status(500).json({ message: "Failed to get upload URL" });
-    }
-  });
-
-  app.put('/api/product-images', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = getUserId(req);
-      if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      const user = await storage.getUser(userId);
-      if (!user?.isAdmin) {
-        return res.status(403).json({ message: "Admin access required" });
+      if (!req.file) {
+        return res.status(400).json({ message: 'No file provided' });
       }
 
-      if (!req.body.imageURL) {
-        return res.status(400).json({ error: "imageURL is required" });
-      }
-
-      const { ObjectStorageService } = await import('./objectStorage');
-      const objectStorageService = new ObjectStorageService();
-      const objectPath = await objectStorageService.trySetObjectEntityAclPolicy(
-        req.body.imageURL,
-        {
-          owner: userId,
-          visibility: "public",
-        },
+      // Generate unique file key
+      const fileKey = generateFileKey(req.file.originalname, userId);
+      
+      // Upload to storage service
+      const url = await storageService.upload(
+        req.file.buffer,
+        fileKey,
+        req.file.mimetype
       );
 
-      res.status(200).json({ objectPath });
-    } catch (error) {
-      console.error("Error setting product image:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.json({
+        url,
+        key: fileKey,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+      });
+    } catch (error: any) {
+      console.error('File upload error:', error);
+      res.status(500).json({ 
+        message: error.message || 'Upload failed' 
+      });
     }
   });
 
-  app.get("/objects/:objectPath(*)", async (req, res) => {
+  app.post('/api/admin/upload', requireAdmin, upload.single('file'), async (req: any, res) => {
     try {
-      const { ObjectStorageService, ObjectNotFoundError } = await import('./objectStorage');
-      const objectStorageService = new ObjectStorageService();
-      const objectFile = await objectStorageService.getObjectEntityFile(req.path);
-      objectStorageService.downloadObject(objectFile, res);
-    } catch (error) {
-      console.error("Error accessing object:", error);
-      const { ObjectNotFoundError } = await import('./objectStorage');
-      if (error instanceof ObjectNotFoundError) {
-        return res.sendStatus(404);
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: 'Authentication required' });
       }
-      return res.sendStatus(500);
+
+      if (!req.file) {
+        return res.status(400).json({ message: 'No file provided' });
+      }
+
+      // Admin uploads go to a public folder
+      const fileKey = generateFileKey(req.file.originalname);
+      
+      // Upload to storage service
+      const url = await storageService.upload(
+        req.file.buffer,
+        fileKey,
+        req.file.mimetype
+      );
+
+      res.json({
+        url,
+        key: fileKey,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+      });
+    } catch (error: any) {
+      console.error('Admin file upload error:', error);
+      res.status(500).json({ 
+        message: error.message || 'Upload failed' 
+      });
+    }
+  });
+
+  app.delete('/api/files/:key', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      const { key } = req.params;
+      const decodedKey = decodeURIComponent(key);
+
+      // Check if user owns the file or is admin
+      const user = await storage.getUser(userId);
+      const isOwner = decodedKey.startsWith(`users/${userId}/`);
+      const isAdmin = user?.isAdmin;
+
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      await storageService.delete(decodedKey);
+      res.json({ message: 'File deleted successfully' });
+    } catch (error: any) {
+      console.error('File deletion error:', error);
+      res.status(500).json({ 
+        message: error.message || 'Deletion failed'
+      });
     }
   });
 
@@ -268,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/products', isAuthenticated, async (req: any, res) => {
+  app.post('/api/products', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -289,7 +336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/products/:id', isAuthenticated, async (req: any, res) => {
+  app.patch('/api/products/:id', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -312,7 +359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/products/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/products/:id', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -343,7 +390,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/variants', isAuthenticated, async (req: any, res) => {
+  app.post('/api/variants', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -364,7 +411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/variants/:id', isAuthenticated, async (req: any, res) => {
+  app.patch('/api/variants/:id', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -387,7 +434,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/variants/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/variants/:id', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -408,7 +455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cart routes
-  app.get('/api/cart', isAuthenticated, async (req: any, res) => {
+  app.get('/api/cart', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -422,7 +469,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/cart', isAuthenticated, async (req: any, res) => {
+  app.post('/api/cart', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -437,7 +484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/cart/:id', isAuthenticated, async (req, res) => {
+  app.patch('/api/cart/:id', requireAuth, async (req, res) => {
     try {
       const { quantity } = req.body;
       const item = await storage.updateCartItem(req.params.id, quantity);
@@ -451,7 +498,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/cart/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/cart/:id', requireAuth, async (req, res) => {
     try {
       await storage.removeFromCart(req.params.id);
       res.status(204).send();
@@ -462,7 +509,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Order routes
-  app.post('/api/orders', isAuthenticated, async (req: any, res) => {
+  app.post('/api/orders', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -497,7 +544,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/orders', isAuthenticated, async (req: any, res) => {
+  app.get('/api/orders', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -517,7 +564,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/orders/:id', isAuthenticated, async (req: any, res) => {
+  app.get('/api/orders/:id', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -543,7 +590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/orders/:id/status', isAuthenticated, async (req: any, res) => {
+  app.patch('/api/orders/:id/status', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -570,7 +617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin API endpoints
-  app.get('/api/admin/metrics', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/metrics', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -590,7 +637,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/admin/products', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/products', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -610,7 +657,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/admin/health', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/health', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -634,7 +681,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/admin/db-stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/db-stats', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
@@ -654,7 +701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/admin/logs', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/logs', requireAdmin, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       if (!userId) {
