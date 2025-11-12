@@ -123,6 +123,14 @@ export default function OwnerDashboard() {
         description: "Variant updated successfully",
       });
     },
+    onError: (error: Error) => {
+      console.error("Variant update error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update variant",
+        variant: "destructive",
+      });
+    },
   });
 
   const updateOrderStatusMutation = useMutation({

@@ -97,9 +97,10 @@ export function VariantEditor({ variant, open, onClose, onSave, isSaving }: Vari
                   <FormLabel>Price ($)</FormLabel>
                   <FormControl>
                     <Input 
-                      {...field} 
-                      type="number" 
-                      step="0.01" 
+                      {...field}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
                       data-testid="input-variant-price" 
                     />
                   </FormControl>
@@ -116,9 +117,9 @@ export function VariantEditor({ variant, open, onClose, onSave, isSaving }: Vari
                   <FormLabel>Cost Price ($)</FormLabel>
                   <FormControl>
                     <Input 
-                      {...field} 
-                      type="number" 
-                      step="0.01" 
+                      {...field}
+                      type="text"
+                      inputMode="decimal"
                       placeholder="Optional cost price"
                       data-testid="input-variant-cost-price" 
                     />

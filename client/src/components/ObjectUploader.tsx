@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import Uppy from "@uppy/core";
-import { DashboardModal } from "@uppy/react";
+import Dashboard from "@uppy/react/dashboard";
 import AwsS3 from "@uppy/aws-s3";
 import type { UploadResult } from "@uppy/core";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 interface ObjectUploaderProps {
   maxNumberOfFiles?: number;
@@ -64,12 +65,15 @@ export function ObjectUploader({
         {children}
       </Button>
 
-      <DashboardModal
-        uppy={uppy}
-        open={showModal}
-        onRequestClose={() => setShowModal(false)}
-        proudlyDisplayPoweredByUppy={false}
-      />
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="max-w-4xl p-0">
+          <Dashboard
+            uppy={uppy}
+            proudlyDisplayPoweredByUppy={false}
+            theme="auto"
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
